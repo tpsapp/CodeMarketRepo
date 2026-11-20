@@ -1,8 +1,9 @@
 # Local planning & audit artifacts
 .planning/
 
-# Game API reference (excluded from public repo)
+# Game API reference & local minified paste-ready copies (excluded from public repo)
 code-market-api.json
+*-mini.java
 
 # Java build artifacts
 *.class

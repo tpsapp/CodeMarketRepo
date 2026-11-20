@@ -2,22 +2,19 @@
 
 Fully automated Java 25 scripts for a 5-robot, 3-register supermarket fleet in the Steam game **Code Market** (all tech-tree unlocks enabled).
 
-## Readable vs. Minified Files
+## In-Game Editor Limits
 
-*Code Market*'s in-game editor enforces both a **16,382-character** and a **498-line** limit per robot script. Every robot is provided in two forms:
-
-- **`robot1.java` – `robot5.java`**: Cleanly formatted, readable source code for reading, learning, and modifying.
-- **`robot1-mini.java` – `robot5-mini.java`**: Compacted, paste-ready versions (~126–151 lines, ~11–13 KB) with identical logic that fit comfortably inside the in-game editor limits.
+*Code Market*'s in-game editor enforces both a **16,382-character** and a **498-line** limit per robot script. The files in this repository (`robot1.java`–`robot5.java`) are kept cleanly formatted and readable for sharing and editing. Before pasting into the game, compact/minify the whitespace locally so each script stays under 498 lines and 16,382 characters.
 
 ## Fleet Architecture
 
-| Robot | Readable Source | Paste-Ready Script | Role |
-| :---: | :--- | :--- | :--- |
-| **1** | `robot1.java` | `robot1-mini.java` | Register 1 cashier + midnight wheel-spin alert (`SPIN THE WHEEL!`) |
-| **2** | `robot2.java` | `robot2-mini.java` | Register 2 cashier |
-| **3** | `robot3.java` | `robot3-mini.java` | Register 3 cashier |
-| **4** | `robot4.java` | `robot4-mini.java` | Inventory manager, delivery ordering, and urgency-first shelf restocker |
-| **5** | `robot5.java` | `robot5-mini.java` | Vending machine & reverse-order truck restocker |
+| Robot | Script | Role |
+| :---: | :--- | :--- |
+| **1** | `robot1.java` | Register 1 cashier + midnight wheel-spin alert (`SPIN THE WHEEL!`) |
+| **2** | `robot2.java` | Register 2 cashier |
+| **3** | `robot3.java` | Register 3 cashier |
+| **4** | `robot4.java` | Inventory manager, delivery ordering, and urgency-first shelf restocker |
+| **5** | `robot5.java` | Vending machine & reverse-order truck restocker |
 
 ## Key Features
 
@@ -29,7 +26,7 @@ Fully automated Java 25 scripts for a 5-robot, 3-register supermarket fleet in t
 ## Usage
 
 1. Unlock the full Java 25 code tree and all 5 robots / 3 registers in *Code Market*.
-2. Copy the contents of **`robot1-mini.java`** through **`robot5-mini.java`** into Robots 1–5 respectively.
+2. Compact/minify `robot1.java` through `robot5.java` (to stay under the 498-line / 16,382-character editor limits) and paste them into Robots 1–5 respectively.
 3. Start all 5 robots. No hardcoded rack coordinates are required — the scripts discover registers, garage tiles, and all placed racks dynamically at startup.
 
 ## License
