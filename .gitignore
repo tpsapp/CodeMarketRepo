@@ -4,13 +4,17 @@
 # Game API reference & local minified paste-ready copies (excluded from public repo)
 code-market-api.json
 *-mini.java
+*-mini.cs
+CodeMarket_Ninja.png
 
-# Java build artifacts
+# Build artifacts
 *.class
 *.jar
 *.log
 out/
 build/
+bin/
+obj/
 
 # IDE & OS files
 .vscode/
