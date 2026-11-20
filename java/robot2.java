@@ -120,7 +120,7 @@ void ensurePickupCache(Product p) {
 
 boolean isNightTime() {
   int h = store.getHour();
-  return h >= 22 || h < 6;
+  return h >= 22 || h < 6 || (h == 21 && store.getMinute() >= 50);
 }
 
 int getRackStock(Product p) {
@@ -509,11 +509,26 @@ void packOrder(Order order) {
       continue;
     }
 
-    boolean isNight = isNightTime();
     ArrayList<Product> toReturn = new ArrayList<>();
     for (Product p : robot.getCarried()) {
-      if (order.getRemaining(p) <= 0) continue;
-      if (p.isAlcohol() && isNight) {
+      if (order.getRemaining(p) <= 0 || p.isAlcohol()) continue;
+      robot.putInBag(p);
+    }
+
+    int remTotal = 0;
+    int carriedAlc = 0;
+    for (Product p : order.getProducts()) {
+      int rem = order.getRemaining(p);
+      remTotal += rem;
+      if (p.isAlcohol() && rem > 0) {
+        carriedAlc += Math.min(rem, carriedCount(p));
+      }
+    }
+    boolean deferAlc = store.getHour() == 21 && store.getMinute() >= 30 && remTotal > carriedAlc;
+
+    for (Product p : robot.getCarried()) {
+      if (order.getRemaining(p) <= 0 || !p.isAlcohol()) continue;
+      if (isNightTime() || deferAlc) {
         order.remove(p);
         if (!toReturn.contains(p)) toReturn.add(p);
       } else {

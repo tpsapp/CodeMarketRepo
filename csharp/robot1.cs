@@ -113,7 +113,7 @@ void EnsurePickupCache(Product p) {
 
 bool IsNightTime() {
   int h = store.GetHour();
-  return h >= 22 || h < 6;
+  return h >= 22 || h < 6 || (h == 21 && store.GetMinute() >= 50);
 }
 
 int GetRackStock(Product p) {
@@ -505,11 +505,26 @@ void PackOrder(Order order) {
       continue;
     }
 
-    bool nightNow = IsNightTime();
     List<Product> toReturn = new();
     foreach (Product p in robot.GetCarried()) {
-      if (order.GetRemaining(p) <= 0) continue;
-      if (p.IsAlcohol() && nightNow) {
+      if (order.GetRemaining(p) <= 0 || p.IsAlcohol()) continue;
+      robot.PutInBag(p);
+    }
+
+    int remTotal = 0;
+    int carriedAlc = 0;
+    foreach (Product p in order.GetProducts()) {
+      int rem = order.GetRemaining(p);
+      remTotal += rem;
+      if (p.IsAlcohol() && rem > 0) {
+        carriedAlc += Math.Min(rem, CarriedCount(p));
+      }
+    }
+    bool deferAlc = store.GetHour() == 21 && store.GetMinute() >= 30 && remTotal > carriedAlc;
+
+    foreach (Product p in robot.GetCarried()) {
+      if (order.GetRemaining(p) <= 0 || !p.IsAlcohol()) continue;
+      if (IsNightTime() || deferAlc) {
         order.Remove(p);
         if (!toReturn.Contains(p)) toReturn.Add(p);
       } else {
