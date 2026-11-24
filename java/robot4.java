@@ -11,7 +11,7 @@ int gX = store.getGarageX();
 int gY = store.getGarageY();
 
 record Spot(int tid, Direction dir, int rx, int ry) {}
-record Urg(Product p, int score) {}
+record Urg(Product p, int score, int need) {}
 
 void pause(int ms) {
   try {
@@ -555,8 +555,9 @@ void syncAndOrder() {
     int stock = rackStock(p);
     if (cap <= 0 || stock == -1) continue;
     int onWay = store.getRemaining(p) + carriedCount(p) + r5Hold.getOrDefault(p, 0);
-    if (cap - (stock + onWay) > 0) {
-      cands.add(new Urg(p, urgency(p)));
+    int need = cap - (stock + onWay);
+    if (need > 0) {
+      cands.add(new Urg(p, urgency(p), need));
     }
   }
 
@@ -564,11 +565,11 @@ void syncAndOrder() {
 
   for (Urg u : cands) {
     Product p = u.p();
-    int need = totalCap(p) - (rackStock(p) + store.getRemaining(p) + carriedCount(p) + r5Hold.getOrDefault(p, 0));
+    int need = u.need();
     while (need-- > 0) list.add(p);
   }
 
-  if (store.isTruckAway() && !list.isEmpty()) {
+  if (!list.isEmpty()) {
     int count = Math.min(list.size(), store.getTruckCapacity());
     var batch = new ArrayList<>(list.subList(0, count));
     if (store.callDelivery(batch)) {
@@ -578,7 +579,7 @@ void syncAndOrder() {
         batchQty.put(p, batchQty.getOrDefault(p, 0) + 1);
       }
       truckBusy = true;
-      for (int i = 0; i < count; i++) list.remove(0);
+      list.subList(0, count).clear();
     }
   }
 }
@@ -655,8 +656,9 @@ void restockFromTruck() {
 
     var items = new ArrayList<Urg>();
     for (Product p : Product.values()) {
-      if (store.getRemaining(p) > 0) {
-        items.add(new Urg(p, urgency(p)));
+      int rem = store.getRemaining(p);
+      if (rem > 0) {
+        items.add(new Urg(p, urgency(p), rem));
       }
     }
     items.sort((a, b) -> Integer.compare(b.score(), a.score()));

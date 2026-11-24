@@ -546,8 +546,9 @@ void SyncAndOrder() {
     int stock = RackStock(p);
     if (cap <= 0 || stock == -1) continue;
     int onWay = store.GetRemaining(p) + CarriedCount(p) + r5Hold.GetValueOrDefault(p, 0);
-    if (cap - (stock + onWay) > 0) {
-      cands.Add(new Urg(p, Urgency(p)));
+    int need = cap - (stock + onWay);
+    if (need > 0) {
+      cands.Add(new Urg(p, Urgency(p), need));
     }
   }
 
@@ -555,11 +556,11 @@ void SyncAndOrder() {
 
   foreach (Urg u in cands) {
     Product p = u.P;
-    int need = TotalCap(p) - (RackStock(p) + store.GetRemaining(p) + CarriedCount(p) + r5Hold.GetValueOrDefault(p, 0));
+    int need = u.Need;
     while (need-- > 0) list.Add(p);
   }
 
-  if (store.IsTruckAway() && list.Count > 0) {
+  if (list.Count > 0) {
     int count = Math.Min(list.Count, store.GetTruckCapacity());
     var batch = list.GetRange(0, count);
     if (store.CallDelivery(batch)) {
@@ -647,8 +648,9 @@ void RestockFromTruck() {
 
     var items = new List<Urg>();
     foreach (Product p in Enum.GetValues<Product>()) {
-      if (store.GetRemaining(p) > 0) {
-        items.Add(new Urg(p, Urgency(p)));
+      int rem = store.GetRemaining(p);
+      if (rem > 0) {
+        items.Add(new Urg(p, Urgency(p), rem));
       }
     }
     items.Sort((a, b) => b.Score.CompareTo(a.Score));
@@ -683,4 +685,4 @@ while (true) {
 }
 
 record Spot(int Tid, Direction Dir, int Rx, int Ry);
-record Urg(Product P, int Score);
+record Urg(Product P, int Score, int Need);
