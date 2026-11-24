@@ -189,7 +189,7 @@ int walkComputedPath(int startId, int targetId) {
     if (!robot.canMove(step) || !robot.move(step)) {
       int bx = robot.getX() + getDx(step);
       int by = robot.getY() + getDy(step);
-      return by * W + bx;
+      return (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -2;
     }
   }
   return -1;
@@ -197,7 +197,7 @@ int walkComputedPath(int startId, int targetId) {
 
 boolean goTo(int tx, int ty, Direction faceDir, int initBlocked) {
   bGen++;
-  if (initBlocked >= 0) blkGen[initBlocked] = bGen;
+  if (initBlocked >= 0 && initBlocked < SIZE) blkGen[initBlocked] = bGen;
   Direction lastBlockedDir = null;
   int retries = 0;
   int totalAttempts = 0;
@@ -230,16 +230,18 @@ boolean goTo(int tx, int ty, Direction faceDir, int initBlocked) {
       if (faceDir != null && robot.getFacing() != faceDir) robot.turn(faceDir);
       return true;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) {
+      blkGen[hit] = bGen;
+      int hx = hit % W;
+      int hy = hit / W;
+      int rx = robot.getX();
+      int ry = robot.getY();
+      if (hx > rx) lastBlockedDir = Direction.RIGHT;
+      else if (hx < rx) lastBlockedDir = Direction.LEFT;
+      else if (hy > ry) lastBlockedDir = Direction.UP;
+      else if (hy < ry) lastBlockedDir = Direction.DOWN;
+    }
     markAdjBlocked();
-    int hx = hit % W;
-    int hy = hit / W;
-    int rx = robot.getX();
-    int ry = robot.getY();
-    if (hx > rx) lastBlockedDir = Direction.RIGHT;
-    else if (hx < rx) lastBlockedDir = Direction.LEFT;
-    else if (hy > ry) lastBlockedDir = Direction.UP;
-    else if (hy < ry) lastBlockedDir = Direction.DOWN;
 
     retries++;
     if (retries > 1) {
@@ -266,7 +268,8 @@ boolean goToTruck() {
     if (!robot.canMove(step) || !robot.move(step)) {
       int bx = robot.getX() + getDx(step);
       int by = robot.getY() + getDy(step);
-      return goTo(garageX, garageY, garageSide, by * W + bx);
+      int bid = (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -1;
+      return goTo(garageX, garageY, garageSide, bid);
     }
   }
 }
@@ -398,14 +401,14 @@ Product goToNearest(List<Product> targets) {
       if (bestDir != null && robot.getFacing() != bestDir) robot.turn(bestDir);
       return bestP;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) blkGen[hit] = bGen;
     markAdjBlocked();
   }
 
   int bestTid = bfs(robot.getX(), robot.getY(), -1, false, true);
   if (bestTid == -1) return null;
   Product bestP = tgtProd[bestTid];
-  goTo(bestTid % W, bestTid / W, tgtDir[bestTid], -1);
+  if (!goTo(bestTid % W, bestTid / W, tgtDir[bestTid], -1)) return null;
   return bestP;
 }
 
@@ -466,7 +469,8 @@ void unloadCarried() {
     Product next = goToNearest(carried);
     if (next == null) break;
     while (robot.has(next) && safePutOnShelf(next)) {}
-    if (robot.has(next) && robot.isAtPickup()) {
+    Shelf s = robot.getShelf();
+    if (robot.has(next) && robot.isAtPickup() && s != null && s.getProduct() == next) {
       int rx = robot.getX() + getDx(robot.getFacing());
       int ry = robot.getY() + getDy(robot.getFacing());
       fullRackStock.put(ry * W + rx, store.getStock(rx, ry));

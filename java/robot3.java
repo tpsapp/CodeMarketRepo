@@ -5,12 +5,18 @@ int H = store.getHeight();
 int SIZE = W * H;
 
 List<Cell> regs = store.findAll(Entity.REGISTER);
-Cell myReg = regs.get(0);
-for (Cell r : regs) {
-  if (store.getRegisterNumber(r.getX(), r.getY()) == 3) {
-    myReg = r;
-    break;
+Cell myReg = null;
+if (regs != null) {
+  for (Cell r : regs) {
+    if (store.getRegisterNumber(r.getX(), r.getY()) == 3) {
+      myReg = r;
+      break;
+    }
   }
+}
+if (myReg == null) {
+  System.err.println("Register 3 not found!");
+  return;
 }
 
 int regX = myReg.getX();
@@ -245,7 +251,7 @@ int walkComputedPath(int startId, int targetId) {
     if (!robot.canMove(step) || !robot.move(step)) {
       int bx = robot.getX() + getDx(step);
       int by = robot.getY() + getDy(step);
-      return by * W + bx;
+      return (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -2;
     }
   }
   return -1;
@@ -253,7 +259,7 @@ int walkComputedPath(int startId, int targetId) {
 
 boolean goTo(int tx, int ty, Direction faceDir, int initBlocked) {
   bGen++;
-  if (initBlocked >= 0) blkGen[initBlocked] = bGen;
+  if (initBlocked >= 0 && initBlocked < SIZE) blkGen[initBlocked] = bGen;
   Direction lastBlockedDir = null;
   int retries = 0;
   int totalAttempts = 0;
@@ -286,16 +292,18 @@ boolean goTo(int tx, int ty, Direction faceDir, int initBlocked) {
       if (faceDir != null && robot.getFacing() != faceDir) robot.turn(faceDir);
       return true;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) {
+      blkGen[hit] = bGen;
+      int hx = hit % W;
+      int hy = hit / W;
+      int rx = robot.getX();
+      int ry = robot.getY();
+      if (hx > rx) lastBlockedDir = Direction.RIGHT;
+      else if (hx < rx) lastBlockedDir = Direction.LEFT;
+      else if (hy > ry) lastBlockedDir = Direction.UP;
+      else if (hy < ry) lastBlockedDir = Direction.DOWN;
+    }
     markAdjBlocked();
-    int hx = hit % W;
-    int hy = hit / W;
-    int rx = robot.getX();
-    int ry = robot.getY();
-    if (hx > rx) lastBlockedDir = Direction.RIGHT;
-    else if (hx < rx) lastBlockedDir = Direction.LEFT;
-    else if (hy > ry) lastBlockedDir = Direction.UP;
-    else if (hy < ry) lastBlockedDir = Direction.DOWN;
 
     retries++;
     if (retries > 3) {
@@ -322,7 +330,8 @@ boolean goToCached(int tx, int ty, Direction faceDir, Direction[] table) {
     if (!robot.canMove(step) || !robot.move(step)) {
       int bx = robot.getX() + getDx(step);
       int by = robot.getY() + getDy(step);
-      return goTo(tx, ty, faceDir, by * W + bx);
+      int bid = (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -1;
+      return goTo(tx, ty, faceDir, bid);
     }
   }
 }
@@ -369,14 +378,14 @@ Product goToNearest(List<Product> targets, boolean requireStock) {
       if (bestDir != null && robot.getFacing() != bestDir) robot.turn(bestDir);
       return bestP;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) blkGen[hit] = bGen;
     markAdjBlocked();
   }
 
   int bestTid = bfs(robot.getX(), robot.getY(), -1, false, true, tie);
   if (bestTid == -1) return null;
   Product bestP = tgtProd[bestTid];
-  goTo(bestTid % W, bestTid / W, tgtDir[bestTid], -1);
+  if (!goTo(bestTid % W, bestTid / W, tgtDir[bestTid], -1)) return null;
   return bestP;
 }
 
@@ -435,7 +444,8 @@ void returnProducts(List<Product> toReturn) {
     Product ret = goToNearest(pending, false);
     if (ret == null) break;
     while (robot.has(ret) && safePutOnShelf(ret)) {}
-    if (robot.has(ret) && robot.isAtPickup()) {
+    Shelf s = robot.getShelf();
+    if (robot.has(ret) && robot.isAtPickup() && s != null && s.getProduct() == ret) {
       fullAtStock.put(ret, getRackStock(ret));
     } else if (!robot.has(ret)) {
       fullAtStock.remove(ret);
@@ -482,7 +492,8 @@ void packOrder(Order order) {
         picked = true;
         need--;
       }
-      if (robot.isAtPickup() && !picked && carriedCount(next) == 0 && !next.isInSeason()) {
+      Shelf s = robot.getShelf();
+      if (robot.isAtPickup() && s != null && s.getProduct() == next && !picked && carriedCount(next) == 0 && !next.isInSeason()) {
         order.remove(next);
       }
     }
@@ -544,9 +555,10 @@ void packOrder(Order order) {
 
 void serveCustomer(Order order, Customer customer) {
   boolean isNight = isNightTime();
+  boolean isAdult = customer != null && customer.isAdult();
   for (Product p : order.getProducts()) {
     int stock = getRackStock(p);
-    if ((p.isAdultsOnly() && !customer.isAdult()) || (p.isAlcohol() && isNight) || stock == -1 || (stock <= 0 && !p.isInSeason())) {
+    if ((p.isAdultsOnly() && !isAdult) || (p.isAlcohol() && isNight) || stock == -1 || (stock <= 0 && !p.isInSeason())) {
       order.remove(p);
     }
   }
@@ -562,8 +574,8 @@ while (true) {
     pause(50);
     continue;
   }
-  Order order = robot.takeOrder();
   Customer customer = robot.getCustomer();
+  Order order = robot.takeOrder();
   if (order != null) {
     serveCustomer(order, customer);
   } else {

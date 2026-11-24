@@ -210,7 +210,9 @@ int WalkPath(int startId, int targetId) {
   for (int i = len - 1; i >= 0; i--) {
     Direction step = pathBuf[i];
     if (!robot.CanMove(step) || !robot.Move(step)) {
-      return (robot.GetY() + Dy(step)) * W + (robot.GetX() + Dx(step));
+      int bx = robot.GetX() + Dx(step);
+      int by = robot.GetY() + Dy(step);
+      return (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -2;
     }
   }
   return -1;
@@ -218,7 +220,7 @@ int WalkPath(int startId, int targetId) {
 
 bool GoTo(int tx, int ty, Direction? faceDir, int initBlocked) {
   bGen++;
-  if (initBlocked >= 0) blkGen[initBlocked] = bGen;
+  if (initBlocked >= 0 && initBlocked < SIZE) blkGen[initBlocked] = bGen;
   int retries = 0;
   int attempts = 0;
   int tid = ty * W + tx;
@@ -249,9 +251,11 @@ bool GoTo(int tx, int ty, Direction? faceDir, int initBlocked) {
       if (faceDir != null && robot.GetFacing() != faceDir.Value) robot.Turn(faceDir.Value);
       return true;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) {
+      blkGen[hit] = bGen;
+      blockedDir = FaceTo(robot.GetX(), robot.GetY(), hit % W, hit / W);
+    }
     MarkAdj();
-    blockedDir = FaceTo(robot.GetX(), robot.GetY(), hit % W, hit / W);
     if (++retries > 2) {
       if (!Sidestep(blockedDir)) YieldTick();
       blockedDir = null;
@@ -273,7 +277,10 @@ bool GoToTruck() {
     if (stepOpt == null) return GoTo(gX, gY, gSide, -1);
     Direction step = stepOpt.Value;
     if (!robot.CanMove(step) || !robot.Move(step)) {
-      return GoTo(gX, gY, gSide, (robot.GetY() + Dy(step)) * W + (robot.GetX() + Dx(step)));
+      int bx = robot.GetX() + Dx(step);
+      int by = robot.GetY() + Dy(step);
+      int bid = (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -1;
+      return GoTo(gX, gY, gSide, bid);
     }
   }
 }
@@ -393,21 +400,21 @@ Product? GoToNearest(List<Product> targets, bool filterFull) {
       if (bestP != null) LearnCap(bestP.Value);
       return bestP;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) blkGen[hit] = bGen;
     MarkAdj();
   }
 
   int fallbackTid = Bfs(robot.GetX(), robot.GetY(), -1, false, true);
   if (fallbackTid == -1) return null;
   Product? fallbackP = tgtProd[fallbackTid];
-  if (GoTo(fallbackTid % W, fallbackTid / W, tgtDir[fallbackTid], -1) && fallbackP != null) {
-    LearnCap(fallbackP.Value);
-  }
+  if (!GoTo(fallbackTid % W, fallbackTid / W, tgtDir[fallbackTid], -1)) return null;
+  if (fallbackP != null) LearnCap(fallbackP.Value);
   return fallbackP;
 }
 
 var toInspect = new List<Product>();
 var toProbe = new List<Product>();
+var skipInspect = new HashSet<Product>();
 
 void InitLists() {
   foreach (Product p in Enum.GetValues<Product>()) {
@@ -421,18 +428,36 @@ void InitLists() {
 
 void InspectOne() {
   if (toInspect.Count > 0) {
-    Product? next = GoToNearest(toInspect, false);
+    var avail = new List<Product>();
+    foreach (Product p in toInspect) {
+      if (!skipInspect.Contains(p)) avail.Add(p);
+    }
+    if (avail.Count == 0) {
+      skipInspect.Clear();
+      if (toProbe.Count > 0) {
+        Product p = toProbe[0];
+        toProbe.RemoveAt(0);
+        if (!ProbeSpot(p)) toProbe.Add(p);
+      } else {
+        YieldTick();
+      }
+      return;
+    }
+    Product? next = GoToNearest(avail, false);
     if (next != null && rackCap.ContainsKey(next.Value)) {
       toInspect.Remove(next.Value);
+      skipInspect.Remove(next.Value);
+    } else if (next != null) {
+      skipInspect.Add(next.Value);
+      YieldTick();
+    } else {
+      foreach (Product p in avail) skipInspect.Add(p);
+      YieldTick();
     }
   } else if (toProbe.Count > 0) {
     Product p = toProbe[0];
-    if (ProbeSpot(p)) {
-      toProbe.RemoveAt(0);
-    } else {
-      toProbe.RemoveAt(0);
-      toProbe.Add(p);
-    }
+    toProbe.RemoveAt(0);
+    if (!ProbeSpot(p)) toProbe.Add(p);
   }
 }
 
@@ -461,13 +486,18 @@ void UpdateR5Hold(int nowMin) {
     truckBusy = false;
     r5Hold.Clear();
     r5Base.Clear();
-    int cap = robot.GetCapacity();
+    int remCap = robot.GetCapacity();
     foreach (var e in batchQty) {
+      if (remCap <= 0) break;
       Product p = e.Key;
       int rem = e.Value - myPicked.GetValueOrDefault(p, 0);
-      if (rem > 0) {
-        r5Hold[p] = Math.Min(rem, cap);
-        r5Base[p] = RackStock(p);
+      int cur = RackStock(p);
+      int tc = TotalCap(p);
+      if (rem > 0 && (tc <= 0 || cur < tc)) {
+        int hold = Math.Min(rem, remCap);
+        r5Hold[p] = hold;
+        r5Base[p] = cur;
+        remCap -= hold;
       }
     }
     batchQty.Clear();
@@ -483,6 +513,12 @@ void UpdateR5Hold(int nowMin) {
   }
   foreach (Product p in r5Hold.Keys.ToList()) {
     int cur = RackStock(p);
+    int tc = TotalCap(p);
+    if (tc > 0 && cur >= tc) {
+      r5Hold.Remove(p);
+      r5Base.Remove(p);
+      continue;
+    }
     int b = r5Base.GetValueOrDefault(p, cur);
     if (cur <= b) continue;
     int left = r5Hold[p] - (cur - b);
@@ -588,7 +624,8 @@ void UnloadCarried() {
     if (nextOpt == null) break;
     Product next = nextOpt.Value;
     while (robot.Has(next) && SafePut(next)) {}
-    if (robot.Has(next) && robot.IsAtPickup()) {
+    Shelf? s = robot.GetShelf();
+    if (robot.Has(next) && robot.IsAtPickup() && s != null && s.GetProduct() == next) {
       int rx = robot.GetX() + Dx(robot.GetFacing());
       int ry = robot.GetY() + Dy(robot.GetFacing());
       fullRack[ry * W + rx] = store.GetStock(rx, ry);

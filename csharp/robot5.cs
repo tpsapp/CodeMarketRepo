@@ -182,7 +182,7 @@ int WalkComputedPath(int startId, int targetId) {
     if (!robot.CanMove(step) || !robot.Move(step)) {
       int bx = robot.GetX() + GetDx(step);
       int by = robot.GetY() + GetDy(step);
-      return by * W + bx;
+      return (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -2;
     }
   }
   return -1;
@@ -190,7 +190,7 @@ int WalkComputedPath(int startId, int targetId) {
 
 bool GoTo(int tx, int ty, Direction? faceDir, int initBlocked) {
   bGen++;
-  if (initBlocked >= 0) blkGen[initBlocked] = bGen;
+  if (initBlocked >= 0 && initBlocked < SIZE) blkGen[initBlocked] = bGen;
   Direction? lastBlockedDir = null;
   int retries = 0;
   int totalAttempts = 0;
@@ -222,16 +222,18 @@ bool GoTo(int tx, int ty, Direction? faceDir, int initBlocked) {
       if (faceDir != null && robot.GetFacing() != faceDir.Value) robot.Turn(faceDir.Value);
       return true;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) {
+      blkGen[hit] = bGen;
+      int hx = hit % W;
+      int hy = hit / W;
+      int rx = robot.GetX();
+      int ry = robot.GetY();
+      if (hx > rx) lastBlockedDir = Direction.Right;
+      else if (hx < rx) lastBlockedDir = Direction.Left;
+      else if (hy > ry) lastBlockedDir = Direction.Up;
+      else if (hy < ry) lastBlockedDir = Direction.Down;
+    }
     MarkAdjBlocked();
-    int hx = hit % W;
-    int hy = hit / W;
-    int rx = robot.GetX();
-    int ry = robot.GetY();
-    if (hx > rx) lastBlockedDir = Direction.Right;
-    else if (hx < rx) lastBlockedDir = Direction.Left;
-    else if (hy > ry) lastBlockedDir = Direction.Up;
-    else if (hy < ry) lastBlockedDir = Direction.Down;
 
     retries++;
     if (retries > 1) {
@@ -259,7 +261,8 @@ bool GoToTruck() {
     if (!robot.CanMove(step) || !robot.Move(step)) {
       int bx = robot.GetX() + GetDx(step);
       int by = robot.GetY() + GetDy(step);
-      return GoTo(garageX, garageY, garageSide, by * W + bx);
+      int bid = (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -1;
+      return GoTo(garageX, garageY, garageSide, bid);
     }
   }
 }
@@ -388,14 +391,14 @@ Product? GoToNearest(List<Product> targets) {
       if (bestDir != null && robot.GetFacing() != bestDir.Value) robot.Turn(bestDir.Value);
       return bestP;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) blkGen[hit] = bGen;
     MarkAdjBlocked();
   }
 
   int fallbackTid = Bfs(robot.GetX(), robot.GetY(), -1, false, true);
   if (fallbackTid == -1) return null;
   Product? fallbackP = tgtProd[fallbackTid];
-  GoTo(fallbackTid % W, fallbackTid / W, tgtDir[fallbackTid], -1);
+  if (!GoTo(fallbackTid % W, fallbackTid / W, tgtDir[fallbackTid], -1)) return null;
   return fallbackP;
 }
 
@@ -457,7 +460,8 @@ void UnloadCarried() {
     if (nextOpt == null) break;
     Product next = nextOpt.Value;
     while (robot.Has(next) && SafePutOnShelf(next)) {}
-    if (robot.Has(next) && robot.IsAtPickup()) {
+    Shelf? s = robot.GetShelf();
+    if (robot.Has(next) && robot.IsAtPickup() && s != null && s.GetProduct() == next) {
       int rx = robot.GetX() + GetDx(robot.GetFacing());
       int ry = robot.GetY() + GetDy(robot.GetFacing());
       fullRackStock[ry * W + rx] = store.GetStock(rx, ry);

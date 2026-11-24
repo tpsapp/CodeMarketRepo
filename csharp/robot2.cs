@@ -5,12 +5,18 @@ int H = store.GetHeight();
 int SIZE = W * H;
 
 List<Cell> regs = store.FindAll(Entity.Register);
-Cell myReg = regs[0];
-foreach (Cell r in regs) {
-  if (store.GetRegisterNumber(r.GetX(), r.GetY()) == 2) {
-    myReg = r;
-    break;
+Cell? myReg = null;
+if (regs != null) {
+  foreach (Cell r in regs) {
+    if (store.GetRegisterNumber(r.GetX(), r.GetY()) == 2) {
+      myReg = r;
+      break;
+    }
   }
+}
+if (myReg == null) {
+  Console.Error.WriteLine("Register 2 not found!");
+  return;
 }
 
 int regX = myReg.GetX();
@@ -238,7 +244,7 @@ int WalkComputedPath(int startId, int targetId) {
     if (!robot.CanMove(step) || !robot.Move(step)) {
       int bx = robot.GetX() + GetDx(step);
       int by = robot.GetY() + GetDy(step);
-      return by * W + bx;
+      return (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -2;
     }
   }
   return -1;
@@ -246,7 +252,7 @@ int WalkComputedPath(int startId, int targetId) {
 
 bool GoTo(int tx, int ty, Direction? faceDir, int initBlocked) {
   bGen++;
-  if (initBlocked >= 0) blkGen[initBlocked] = bGen;
+  if (initBlocked >= 0 && initBlocked < SIZE) blkGen[initBlocked] = bGen;
   Direction? lastBlockedDir = null;
   int retries = 0;
   int totalAttempts = 0;
@@ -278,16 +284,18 @@ bool GoTo(int tx, int ty, Direction? faceDir, int initBlocked) {
       if (faceDir != null && robot.GetFacing() != faceDir.Value) robot.Turn(faceDir.Value);
       return true;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) {
+      blkGen[hit] = bGen;
+      int hx = hit % W;
+      int hy = hit / W;
+      int rx = robot.GetX();
+      int ry = robot.GetY();
+      if (hx > rx) lastBlockedDir = Direction.Right;
+      else if (hx < rx) lastBlockedDir = Direction.Left;
+      else if (hy > ry) lastBlockedDir = Direction.Up;
+      else if (hy < ry) lastBlockedDir = Direction.Down;
+    }
     MarkAdjBlocked();
-    int hx = hit % W;
-    int hy = hit / W;
-    int rx = robot.GetX();
-    int ry = robot.GetY();
-    if (hx > rx) lastBlockedDir = Direction.Right;
-    else if (hx < rx) lastBlockedDir = Direction.Left;
-    else if (hy > ry) lastBlockedDir = Direction.Up;
-    else if (hy < ry) lastBlockedDir = Direction.Down;
 
     retries++;
     if (retries > 4) {
@@ -315,7 +323,8 @@ bool GoToCached(int tx, int ty, Direction? faceDir, Direction?[] table) {
     if (!robot.CanMove(step) || !robot.Move(step)) {
       int bx = robot.GetX() + GetDx(step);
       int by = robot.GetY() + GetDy(step);
-      return GoTo(tx, ty, faceDir, by * W + bx);
+      int bid = (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -1;
+      return GoTo(tx, ty, faceDir, bid);
     }
   }
 }
@@ -362,14 +371,14 @@ Product? GoToNearest(List<Product> targets, bool requireStock) {
       if (bestDir != null && robot.GetFacing() != bestDir.Value) robot.Turn(bestDir.Value);
       return bestP;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) blkGen[hit] = bGen;
     MarkAdjBlocked();
   }
 
   int fallbackTid = Bfs(robot.GetX(), robot.GetY(), -1, false, true, tie);
   if (fallbackTid == -1) return null;
   Product? fallbackP = tgtProd[fallbackTid];
-  GoTo(fallbackTid % W, fallbackTid / W, tgtDir[fallbackTid], -1);
+  if (!GoTo(fallbackTid % W, fallbackTid / W, tgtDir[fallbackTid], -1)) return null;
   return fallbackP;
 }
 
@@ -429,7 +438,8 @@ void ReturnProducts(List<Product> toReturn) {
     if (retOpt == null) break;
     Product ret = retOpt.Value;
     while (robot.Has(ret) && SafePutOnShelf(ret)) {}
-    if (robot.Has(ret) && robot.IsAtPickup()) {
+    Shelf? s = robot.GetShelf();
+    if (robot.Has(ret) && robot.IsAtPickup() && s != null && s.GetProduct() == ret) {
       fullAtStock[ret] = GetRackStock(ret);
     } else if (!robot.Has(ret)) {
       fullAtStock.Remove(ret);
@@ -477,7 +487,8 @@ void PackOrder(Order order) {
         picked = true;
         remNeed--;
       }
-      if (robot.IsAtPickup() && !picked && CarriedCount(next) == 0 && !next.IsInSeason()) {
+      Shelf? s = robot.GetShelf();
+      if (robot.IsAtPickup() && s != null && s.GetProduct() == next && !picked && CarriedCount(next) == 0 && !next.IsInSeason()) {
         order.Remove(next);
       }
     }
@@ -537,11 +548,12 @@ void PackOrder(Order order) {
   }
 }
 
-void ServeCustomer(Order order, Customer customer) {
+void ServeCustomer(Order order, Customer? customer) {
   bool isNight = IsNightTime();
+  bool isAdult = customer != null && customer.IsAdult();
   foreach (Product p in order.GetProducts()) {
     int stock = GetRackStock(p);
-    if ((p.IsAdultsOnly() && !customer.IsAdult()) || (p.IsAlcohol() && isNight) || stock == -1 || (stock <= 0 && !p.IsInSeason())) {
+    if ((p.IsAdultsOnly() && !isAdult) || (p.IsAlcohol() && isNight) || stock == -1 || (stock <= 0 && !p.IsInSeason())) {
       order.Remove(p);
     }
   }
@@ -557,9 +569,9 @@ while (true) {
     YieldTick();
     continue;
   }
-  Order? order = robot.TakeOrder();
   Customer? customer = robot.GetCustomer();
-  if (order != null && customer != null) {
+  Order? order = robot.TakeOrder();
+  if (order != null) {
     ServeCustomer(order, customer);
   } else {
     YieldTick();

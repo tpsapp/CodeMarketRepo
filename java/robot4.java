@@ -219,7 +219,9 @@ int walkPath(int startId, int targetId) {
   for (int i = len - 1; i >= 0; i--) {
     Direction step = pathBuf[i];
     if (!robot.canMove(step) || !robot.move(step)) {
-      return (robot.getY() + dy(step)) * W + (robot.getX() + dx(step));
+      int bx = robot.getX() + dx(step);
+      int by = robot.getY() + dy(step);
+      return (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -2;
     }
   }
   return -1;
@@ -227,7 +229,7 @@ int walkPath(int startId, int targetId) {
 
 boolean goTo(int tx, int ty, Direction faceDir, int initBlocked) {
   bGen++;
-  if (initBlocked >= 0) blkGen[initBlocked] = bGen;
+  if (initBlocked >= 0 && initBlocked < SIZE) blkGen[initBlocked] = bGen;
   int retries = 0;
   int attempts = 0;
   int tid = ty * W + tx;
@@ -258,9 +260,11 @@ boolean goTo(int tx, int ty, Direction faceDir, int initBlocked) {
       if (faceDir != null && robot.getFacing() != faceDir) robot.turn(faceDir);
       return true;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) {
+      blkGen[hit] = bGen;
+      blockedDir = faceTo(robot.getX(), robot.getY(), hit % W, hit / W);
+    }
     markAdj();
-    blockedDir = faceTo(robot.getX(), robot.getY(), hit % W, hit / W);
     if (++retries > 2) {
       if (!sidestep(blockedDir)) pause(60);
       blockedDir = null;
@@ -281,7 +285,10 @@ boolean goToTruck() {
     Direction step = toTruck[cid];
     if (step == null) return goTo(gX, gY, gSide, -1);
     if (!robot.canMove(step) || !robot.move(step)) {
-      return goTo(gX, gY, gSide, (robot.getY() + dy(step)) * W + (robot.getX() + dx(step)));
+      int bx = robot.getX() + dx(step);
+      int by = robot.getY() + dy(step);
+      int bid = (bx >= 0 && bx < W && by >= 0 && by < H) ? by * W + bx : -1;
+      return goTo(gX, gY, gSide, bid);
     }
   }
 }
@@ -404,21 +411,21 @@ Product goToNearest(List<Product> targets, boolean filterFull) {
       learnCap(bestP);
       return bestP;
     }
-    blkGen[hit] = bGen;
+    if (hit >= 0 && hit < SIZE) blkGen[hit] = bGen;
     markAdj();
   }
 
   int bestTid = bfs(robot.getX(), robot.getY(), -1, false, true);
   if (bestTid == -1) return null;
   Product bestP = tgtProd[bestTid];
-  if (goTo(bestTid % W, bestTid / W, tgtDir[bestTid], -1)) {
-    learnCap(bestP);
-  }
+  if (!goTo(bestTid % W, bestTid / W, tgtDir[bestTid], -1)) return null;
+  learnCap(bestP);
   return bestP;
 }
 
 var toInspect = new ArrayList<Product>();
 var toProbe = new ArrayList<Product>();
+var skipInspect = new HashSet<Product>();
 
 void initLists() {
   for (Product p : Product.values()) {
@@ -432,14 +439,34 @@ void initLists() {
 
 void inspectOne() {
   if (!toInspect.isEmpty()) {
-    Product next = goToNearest(toInspect, false);
+    var avail = new ArrayList<Product>();
+    for (Product p : toInspect) {
+      if (!skipInspect.contains(p)) avail.add(p);
+    }
+    if (avail.isEmpty()) {
+      skipInspect.clear();
+      if (!toProbe.isEmpty()) {
+        Product p = toProbe.remove(0);
+        if (!probeSpot(p)) toProbe.add(p);
+      } else {
+        pause(60);
+      }
+      return;
+    }
+    Product next = goToNearest(avail, false);
     if (next != null && rackCap.containsKey(next)) {
       toInspect.remove(next);
+      skipInspect.remove(next);
+    } else if (next != null) {
+      skipInspect.add(next);
+      pause(60);
+    } else {
+      skipInspect.addAll(avail);
+      pause(60);
     }
   } else if (!toProbe.isEmpty()) {
-    Product p = toProbe.get(0);
-    if (probeSpot(p)) toProbe.remove(0);
-    else toProbe.add(toProbe.remove(0));
+    Product p = toProbe.remove(0);
+    if (!probeSpot(p)) toProbe.add(p);
   }
 }
 
@@ -468,13 +495,18 @@ void updateR5Hold(int nowMin) {
     truckBusy = false;
     r5Hold.clear();
     r5Base.clear();
-    int cap = robot.getCapacity();
+    int remCap = robot.getCapacity();
     for (var e : batchQty.entrySet()) {
+      if (remCap <= 0) break;
       Product p = e.getKey();
       int rem = e.getValue() - myPicked.getOrDefault(p, 0);
-      if (rem > 0) {
-        r5Hold.put(p, Math.min(rem, cap));
-        r5Base.put(p, rackStock(p));
+      int cur = rackStock(p);
+      int tc = totalCap(p);
+      if (rem > 0 && (tc <= 0 || cur < tc)) {
+        int hold = Math.min(rem, remCap);
+        r5Hold.put(p, hold);
+        r5Base.put(p, cur);
+        remCap -= hold;
       }
     }
     batchQty.clear();
@@ -491,6 +523,11 @@ void updateR5Hold(int nowMin) {
   r5Hold.entrySet().removeIf(e -> {
     Product p = e.getKey();
     int cur = rackStock(p);
+    int tc = totalCap(p);
+    if (tc > 0 && cur >= tc) {
+      r5Base.remove(p);
+      return true;
+    }
     int base = r5Base.getOrDefault(p, cur);
     if (cur <= base) return false;
     int left = e.getValue() - (cur - base);
@@ -595,7 +632,8 @@ void unloadCarried() {
     Product next = goToNearest(carried, true);
     if (next == null) break;
     while (robot.has(next) && safePut(next)) {}
-    if (robot.has(next) && robot.isAtPickup()) {
+    Shelf s = robot.getShelf();
+    if (robot.has(next) && robot.isAtPickup() && s != null && s.getProduct() == next) {
       int rx = robot.getX() + dx(robot.getFacing());
       int ry = robot.getY() + dy(robot.getFacing());
       fullRack.put(ry * W + rx, store.getStock(rx, ry));
