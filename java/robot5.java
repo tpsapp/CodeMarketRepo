@@ -436,6 +436,7 @@ boolean safePutOnShelf(Product p) {
   try {
     return robot.putOnShelf(p);
   } catch (Exception e) {
+    // Game throws a fatal runtime error on rack mismatch; catch prevents halting the robot.
     return false;
   }
 }
@@ -445,6 +446,7 @@ boolean safePickTruck(Product p) {
   try {
     return robot.pick(p);
   } catch (Exception e) {
+    // Game throws a fatal runtime error on rack mismatch; catch prevents halting the robot.
     return false;
   }
 }

@@ -10,6 +10,7 @@ Direction? gSide = store.GetGarageSide();
 int gX = store.GetGarageX();
 int gY = store.GetGarageY();
 
+// Code Market's C# runtime forbids Thread.Sleep; turning in place consumes one simulation tick.
 void YieldTick() {
   robot.Turn(robot.GetFacing());
 }
@@ -596,6 +597,7 @@ bool SafePut(Product p) {
   try {
     return robot.PutOnShelf(p);
   } catch {
+    // Game throws a fatal runtime error on rack mismatch; catch prevents halting the robot.
     return false;
   }
 }
@@ -609,6 +611,7 @@ bool SafePickTruck(Product p) {
     }
     return false;
   } catch {
+    // Game throws a fatal runtime error on rack mismatch; catch prevents halting the robot.
     return false;
   }
 }

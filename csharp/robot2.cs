@@ -31,6 +31,7 @@ Cell? pCell = store.GetPackerCell(regX, regY);
 int packerX = (pCell != null) ? pCell.GetX() : cashierX + 1;
 int packerY = (pCell != null) ? pCell.GetY() : cashierY;
 
+// Code Market's C# runtime forbids Thread.Sleep; turning in place consumes one simulation tick.
 void YieldTick() {
   robot.Turn(robot.GetFacing());
 }
@@ -404,6 +405,7 @@ bool SafePick(Product p) {
   try {
     return robot.Pick(p);
   } catch {
+    // Game throws a fatal runtime error on rack mismatch; catch prevents halting the robot.
     return false;
   }
 }
@@ -415,6 +417,7 @@ bool SafePutOnShelf(Product p) {
   try {
     return robot.PutOnShelf(p);
   } catch {
+    // Game throws a fatal runtime error on rack mismatch; catch prevents halting the robot.
     return false;
   }
 }
