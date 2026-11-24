@@ -76,51 +76,89 @@ MAX_CHARS = 16382
 
 
 def strip_comments_and_compact(src: str) -> str:
-    """Strip // comments (preserving string literals) and compact whitespace safely."""
-    out_lines = []
-    for raw in src.splitlines():
-        in_str = False
-        esc = False
-        cleaned = []
-        i = 0
-        n = len(raw)
-        while i < n:
-            ch = raw[i]
-            if in_str:
-                cleaned.append(ch)
-                if esc:
-                    esc = False
-                elif ch == "\\":
-                    esc = True
-                elif ch == '"':
-                    in_str = False
-            else:
-                if ch == '"':
-                    in_str = True
-                    cleaned.append(ch)
-                elif ch == "/" and i + 1 < n and raw[i + 1] == "/":
+    """Strip // comments (preserving strings/chars) and minify to a single line safely."""
+    # Tokenize into string/char literals, multi-char operators, words/numbers, and single-char punctuation.
+    tokens = []
+    i = 0
+    n = len(src)
+    two_char_ops = {
+        "==", "!=", "<=", ">=", "&&", "||", "++", "--", "+=", "-=", "*=", "/=",
+        "->", "=>", "<<", ">>", "??", "?.", "::",
+    }
+    while i < n:
+        ch = src[i]
+        # Skip whitespace
+        if ch.isspace():
+            i += 1
+            continue
+        # Strip // line comments
+        if ch == "/" and i + 1 < n and src[i + 1] == "/":
+            while i < n and src[i] != "\n":
+                i += 1
+            continue
+        # Strip /* block comments */
+        if ch == "/" and i + 1 < n and src[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (src[i] == "*" and src[i + 1] == "/"):
+                i += 1
+            i += 2
+            continue
+        # Preserve string and char literals verbatim
+        if ch in ('"', "'"):
+            quote = ch
+            j = i + 1
+            while j < n:
+                if src[j] == "\\":
+                    j += 2
+                elif src[j] == quote:
+                    j += 1
                     break
                 else:
-                    cleaned.append(ch)
-            i += 1
-        line = "".join(cleaned).strip()
-        if line:
-            out_lines.append(line)
+                    j += 1
+            tokens.append(("lit", src[i:j]))
+            i = j
+            continue
+        # Word / identifier / number
+        if ch.isalnum() or ch == "_":
+            j = i + 1
+            while j < n and (src[j].isalnum() or src[j] == "_"):
+                j += 1
+            tokens.append(("word", src[i:j]))
+            i = j
+            continue
+        # Two-character operators
+        if i + 1 < n and src[i : i + 2] in two_char_ops:
+            tokens.append(("op", src[i : i + 2]))
+            i += 2
+            continue
+        # Single-character punctuation / operator
+        tokens.append(("op", ch))
+        i += 1
 
-    # Pack multiple short lines into lines <= 160 chars to stay well under 498 lines
-    packed = []
-    buf = ""
-    for line in out_lines:
-        if not buf:
-            buf = line
-        elif len(buf) + 1 + len(line) <= 160:
-            buf = buf + " " + line
-        else:
-            packed.append(buf)
-            buf = line
-    if buf:
-        packed.append(buf)
-    return "\n".join(packed) + "\n"
+    out = []
+    prev_kind = ""
+    prev_tok = ""
+    for kind, tok in tokens:
+        need_space = False
+        if prev_tok:
+            if prev_kind == "word" and kind == "word":
+                need_space = True
+            elif prev_tok[-1] == "+" and tok[0] == "+":
+                need_space = True
+            elif prev_tok[-1] == "-" and tok[0] == "-":
+                need_space = True
+            elif prev_tok[-1] == "/" and tok[0] in ("/", "*"):
+                need_space = True
+            elif prev_tok[-1] == ">" and tok[0] == ">":
+                need_space = True
+            elif prev_tok[-1] == "<" and tok[0] == "<":
+                need_space = True
+        if need_space:
+            out.append(" ")
+        out.append(tok)
+        prev_kind = kind
+        prev_tok = tok
+    return "".join(out) + "\n"
 
 
 api_path = os.path.join(repo_root, "code-market-api.json")
@@ -303,9 +341,13 @@ CSEOF
 </Project>
 CSPROJ
     cp "${TMP_DIR}/Stubs.cs" "${PROJ_DIR}/Stubs.cs"
+    TARGET_CS="${REPO_ROOT}/csharp/robot${i}.cs"
+    if [[ "${DO_MINIFY}" -eq 1 && "${DRY_RUN}" -eq 0 ]]; then
+      TARGET_CS="${REPO_ROOT}/csharp/robot${i}-mini.cs"
+    fi
     {
       printf 'var store = new Store();\nvar robot = new Robot();\n'
-      cat "${REPO_ROOT}/csharp/robot${i}.cs"
+      cat "${TARGET_CS}"
     } > "${PROJ_DIR}/Program.cs"
     if [[ "${VERBOSE}" -eq 1 ]]; then
       dotnet build -c Release "${PROJ_DIR}/R${i}.csproj" -v q --nologo
@@ -313,7 +355,7 @@ CSPROJ
       dotnet build -c Release "${PROJ_DIR}/R${i}.csproj" -v q --nologo >/dev/null
     fi
     if [[ "${VERBOSE}" -eq 1 ]]; then
-      printf '%s[BUILD PASS]%s csharp/robot%d.cs\n' "${C_GREEN}" "${C_RESET}" "${i}"
+      printf '%s[BUILD PASS]%s %s\n' "${C_GREEN}" "${C_RESET}" "${TARGET_CS#"${REPO_ROOT}/"}"
     fi
   done
 else
