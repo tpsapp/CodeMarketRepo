@@ -224,14 +224,7 @@ bool GoTo(int tx, int ty, Direction? faceDir, int initBlocked) {
     }
     if (hit >= 0 && hit < SIZE) {
       blkGen[hit] = bGen;
-      int hx = hit % W;
-      int hy = hit / W;
-      int rx = robot.GetX();
-      int ry = robot.GetY();
-      if (hx > rx) lastBlockedDir = Direction.Right;
-      else if (hx < rx) lastBlockedDir = Direction.Left;
-      else if (hy > ry) lastBlockedDir = Direction.Up;
-      else if (hy < ry) lastBlockedDir = Direction.Down;
+      lastBlockedDir = FaceToward(robot.GetX(), robot.GetY(), hit % W, hit / W);
     }
     MarkAdjBlocked();
 
@@ -407,9 +400,7 @@ void InitPickupSpots() {
     if (p.IsInfinite()) continue;
     List<Cell> cells = GetRackCells(p);
     if (cells == null || cells.Count == 0) continue;
-    if (!CachePickupDirections(p)) {
-      ProbeSingleSpot(p);
-    }
+    CachePickupDirections(p);
   }
   GoToTruck();
 }

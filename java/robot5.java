@@ -232,14 +232,7 @@ boolean goTo(int tx, int ty, Direction faceDir, int initBlocked) {
     }
     if (hit >= 0 && hit < SIZE) {
       blkGen[hit] = bGen;
-      int hx = hit % W;
-      int hy = hit / W;
-      int rx = robot.getX();
-      int ry = robot.getY();
-      if (hx > rx) lastBlockedDir = Direction.RIGHT;
-      else if (hx < rx) lastBlockedDir = Direction.LEFT;
-      else if (hy > ry) lastBlockedDir = Direction.UP;
-      else if (hy < ry) lastBlockedDir = Direction.DOWN;
+      lastBlockedDir = faceToward(robot.getX(), robot.getY(), hit % W, hit / W);
     }
     markAdjBlocked();
 
@@ -417,9 +410,7 @@ void initPickupSpots() {
     if (p.isInfinite()) continue;
     List<Cell> cells = getRackCells(p);
     if (cells == null || cells.isEmpty()) continue;
-    if (!cachePickupDirections(p)) {
-      probeSingleSpot(p);
-    }
+    cachePickupDirections(p);
   }
   goToTruck();
 }
